@@ -32,7 +32,8 @@ For the configuration to work the panel and DB needs these ports opened for comm
     wget https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-english.tar.gz
     tar xvzf phpMyAdmin-latest-english.tar.gz
     mv /var/www/phpmyadmin/phpMyAdmin-latest-english/* /var/www/phpmyadmin
-    
+``` Keep in mind that when you use the tar an mv commands you may need to change the phpmyadmin tar.gz file name because when you download it from the website it comes with the latest version in the name, for example:```
+    /var/www/phpmyadmin/phpMyAdmin-latest-english/* -- > /var/www/phpmyadmin/phpMyAdmin-5.2.0-english/*
 #### Post Install
     chown -R www-data:www-data * 
     mkdir config
@@ -181,14 +182,24 @@ For SSL keep in mind to have installed SSL for Apache2 for the virtual host
         AllowEncodedSlashes On
         php_value upload_max_filesize 100M
         php_value post_max_size 100M
-    <Directory "/var/www/phpmyadmin">
-        AllowOverride all
-    </Directory>
+        <Directory "/var/www/phpmyadmin">
+            AllowOverride all
+        </Directory>
         SSLEngine on
         SSLCertificateFile /etc/letsencrypt/live/<domain>/fullchain.pem
         SSLCertificateKeyFile /etc/letsencrypt/live/<domain>/privkey.pem
     </VirtualHost>
-
+#### Apache Without SSL
+    <VirtualHost *:80>
+        ServerName <domain>
+        DocumentRoot "/var/www/phpmyadmin"
+        AllowEncodedSlashes On
+        php_value upload_max_filesize 100M
+        php_value post_max_size 100M
+        <Directory "/var/www/phpmyadmin">
+            AllowOverride all
+        </Directory>
+    </VirtualHost>
 #### Applying Apache Configuration
     sudo ln -s /etc/apache2/sites-available/phpmyadmin.conf /etc/apache2/sites-enabled/phpmyadmin.conf
     sudo a2enmod rewrite
