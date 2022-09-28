@@ -16,7 +16,7 @@ This supports any of local or remote application (remote if the network and fire
 ##### Add universe repository if you are on Ubuntu 18.04
     apt-add-repository universe
 ##### Install Dependencies
-    apt -y install apache2 php8.1 php8.1-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip} mariadb-server tar unzip git redis-server php-json libapache2-mod-php php-mysql
+    apt -y install apache2 php8.1 php8.1-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip} mariadb-server tar unzip git redis-server php-json libapache2-mod-php php-mysql 
 
 Keep in mind that you may need additional dependencies for additional content or even programs.
 
@@ -48,9 +48,11 @@ This guide only provides a configuration example for SSL secured installation. Y
 Create a file phpmyadmin.conf in /etc/nginx/sites-available/
 Replace <domain> with your desired phpMyAdmin domain
 
-#### With SSL
-   server_name <domain>;
-    return 301 https://$server_name$request_uri;
+#### NGINX With SSL
+    server {
+        listen 80;
+        server_name <domain>;
+        return 301 https://$server_name$request_uri;
     }
 
     server {
@@ -108,51 +110,104 @@ Replace <domain> with your desired phpMyAdmin domain
             deny all;
         }
     }
-### Apache:
-  1. Copy your apache file "FastDLL-Apache.conf" or "FastDLL-ApacheSSL.conf" in `etc/apache2/sites-available` or `/etc/httpd/conf.d/` (If on CentOS)
-  2. Edit the DNS.DOMANIN.COM from the file to your Fully Qualified Domain Name (FQDN), you can find it in your node settings.
+#### NGINX Without SSL
+    server {
+        listen 80;
+        server_name <domain>;
 
-IF YOU TRY USING SSL
-When using the SSL configuration you MUST create SSL certificates, otherwise your webserver will fail to start. Pterodacyl has a doc about this you can find it [HERE](https://pterodactyl.io/tutorials/creating_ssl_certificates.html#method-1:-certbot) .You need to certificate the **FQDN** in order to work !!!!
+        root /var/www/phpmyadmin;
+        index index.php;
 
-## Step 2 (SSH):
-1. The following command assings the right permission for the module and to assign a user www.data for pterodactyl
-  * ``` gpasswd -a www-data pterodactyl && chmod 755 /var/lib/pterodactyl/ && chmod 755 /var/lib/pterodactyl/volumes/ ```
-2. Restart web configuration:
-  ##### NGINX:
-      systemctl restart nginx or nginx -s reload
-  ##### Apache:
-    * You do not need to run any of these commands on CentOS (For CentOS systemctl restart httpd ) *
-    sudo ln -s /etc/apache2/sites-available/FastDLL-Apache.conf /etc/apache2/sites-enabled/FastDLL-Apache.conf  (For Apache NON SSL)
-    sudo ln -s /etc/apache2/sites-available/FastDLL-ApacheSSL.conf /etc/apache2/sites-enabled/FastDLL-ApacheSSL.conf (For Apache WITH SSL)
-    sudo a2enmod rewrite
-    systemctl restart apache2
- ## Step 3 (Pannel edit):
- 1. Edit the eggs install script with the following line at the very bottom end:
- *  ```  chmod 750 /mnt/server/ ```
- 2. If you allready have installed a server and want to add FastDLL you need to run this command in SSH:
- * ``` chmod 755 /var/lib/pterodactyl/volumes/SERVER_UUID ``` Change the UUID to yours
- 3. Configure our egg to use a JSON file parser:
- Edit the Configuration Files section from the egg config with the following: (For CSGO) Create a server.cfg file in csgo/cfg if you dont have one
- Please insert the node Link (yqdn) in *[NODE LINK]* and change http to https if you use SSL for the node subdomain.
- ```
- {
-    "csgo/cfg/server.cfg": {
-        "parser": "file",
-        "find": {
-            "sv_downloadurl": "sv_downloadurl \"http://[NODE LINK]/{{env.P_SERVER_UUID}}/csgo/\"",
-            "sv_allowupload": "sv_allowupload \"0\"",
-            "sv_allowdownload": "sv_allowdownload \"1\""
+        # allow larger file uploads and longer script runtimes
+        client_max_body_size 100m;
+        client_body_timeout 120s;
+
+        sendfile off;
+
+        # See https://hstspreload.org/ before uncommenting the line below.
+        # add_header Strict-Transport-Security "max-age=15768000; preload;";
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header X-Robots-Tag none;
+        add_header Content-Security-Policy "frame-ancestors 'self'";
+        add_header X-Frame-Options DENY;
+        add_header Referrer-Policy same-origin;
+
+        location / {
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location ~ \.php$ {
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            fastcgi_pass unix:/run/php/php7.4-fpm.sock;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param PHP_VALUE "upload_max_filesize = 100M \n post_max_size=100M";
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param HTTP_PROXY "";
+            fastcgi_intercept_errors off;
+            fastcgi_buffer_size 16k;
+            fastcgi_buffers 4 16k;
+            fastcgi_connect_timeout 300;
+            fastcgi_send_timeout 300;
+            fastcgi_read_timeout 300;
+            include /etc/nginx/fastcgi_params;
+        }
+
+        location ~ /\.ht {
+            deny all;
         }
     }
-}
-```
-![alt text](https://i.imgur.com/4exzabq.png)
-3. Name your node locations as our **FQDN** so it will act as a link or if you use only one node and onle location you can manualy edit the code and change {{env.P_SERVER_LOCATION}} in to your **FQDN** for example: 
-  *   ```"sv_downloadurl": "sv_downloadurl \"http://DNS.DOMAIN.COM/{{env.P_SERVER_UUID}}/csgo/\"",```
+#### Applying nginx Configuration
+    # You do not need to execute this file if you are using CentOS.
+    sudo ln -s /etc/nginx/sites-available/phpmyadmin.conf /etc/nginx/sites-enabled/phpmyadmin.conf
+Restart :
+    systemctl restart nginx
+### Apache:
+Create a file phpmyadmin.conf in /etc/apache2/sites-available
+Replace <domain> with your desired phpMyAdmin domain
+For SSL keep in mind to have installed SSL for Apache2 for the virtual host
+    sudo a2enmod ssl
+#### Apache With SSL
+    <VirtualHost *:80>
+        ServerName <domain>
+        RewriteEngine On
+        RewriteCond %{HTTPS} !=on
+        RewriteRule ^/?(.*) https://%{SERVER_NAME}/$1 [R,L]
+    </VirtualHost>
+    <VirtualHost *:443>
+        ServerName <domain>
+        DocumentRoot "/var/www/phpmyadmin"
+        AllowEncodedSlashes On
+        php_value upload_max_filesize 100M
+        php_value post_max_size 100M
+    <Directory "/var/www/phpmyadmin">
+        AllowOverride all
+    </Directory>
+        SSLEngine on
+        SSLCertificateFile /etc/letsencrypt/live/<domain>/fullchain.pem
+        SSLCertificateKeyFile /etc/letsencrypt/live/<domain>/privkey.pem
+    </VirtualHost>
 
-4. For further error please contact me.
+#### Applying Apache Configuration
+    sudo ln -s /etc/apache2/sites-available/phpmyadmin.conf /etc/apache2/sites-enabled/phpmyadmin.conf
+    sudo a2enmod rewrite
+    systemctl restart apache2
 
-# Done
-* The FastDownload url shoud look something like this http(s)://DNS.DOMAIN.COM/SERVER_UUID/csgo
-* [Dr3Amer3r](https://github.com/Dr3Ame3r/pterodactyl_fastdl) - Credits Pterodactyl FastDL Version v1
+# Configuring
+## Configuring DB 
+Use this command and install a password and prompt everything else with 'n'
+    sudo mysql_secure_installation
+Check the php version to be 8.1
+    php -v
+Go and follow the instructions from 
+    http(s)://domain/setup/index.php
+
+# Finalizing
+To finish after every step completed from above you need to delete the config folder, this is done to prevent anyone from being able to administrate phpMyAdmin in the future.
+    rm -rf /var/www/phpmyadmin/config
+
+
+# Conclusion  
+Please keep in mind that this is not an official guide and is not supported by Pterodactyl as well. The guide is also proven to work in a non damaging manner. Proceed at own risk, I do not take responsibility for data loss! 
+For any questions or issues please contact me and I will gladly help you. ;)
